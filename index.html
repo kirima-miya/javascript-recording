@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>JavaScript Mic Access</title>
+  </head>
+  <body>
+    <button id="start-btn">録音開始</button>
+    <button id="stop-btn" disabled>録音終了</button>
+
+    <div style="margin: 10px">
+      <audio id="audioplayer" controls>
+        Your browser does not support the audio element.
+      </audio>
+    </div>
+
+    <script>
+      class Mic {
+        constructor() {
+          this.stream;
+        }
+
+        async connect() {
+          try {
+            this.stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+          } catch (error) {
+            throw new Error(error);
+          }
+        }
+
+        disconnect() {
+          this.stream.getTracks().forEach((track) => track.stop());
+        }
+      }
+
+      class VoiceRecorder {
+        constructor() {
+          this.recorder;
+          this.recordedChunks = [];
+          this.audioURL;
+        }
+        connectMic(stream) {
+          const options = { mimeType: "audio/webm; codecs=opus" };
+          this.recorder = new MediaRecorder(stream, options);
+
+          this.recorder.ondataavailable = this.#handleDataAvailable.bind(this);
+        }
+        #handleDataAvailable(event) {
+          if (event.data.size > 0) this.recordedChunks.push(event.data);
+
+          // recorder.stop()が押されたら
+          if (this.recorder.state === "inactive") this.#preparePlay();
+        }
+        #preparePlay() {
+          const options = { type: "audio/webm; codecs=opus" };
+          const blob = new Blob(this.recordedChunks, options);
+          this.recordedChunks = [];
+
+          window.URL.revokeObjectURL(this.audioURL);
+          this.audioURL = window.URL.createObjectURL(blob);
+
+          const audioPlayer = document.getElementById("audioplayer");
+          audioPlayer.src = this.audioURL;
+        }
+        startRecording() {
+          const timeslice = 1000; // [millsec]ごとにondataavailable()
+          this.recorder.start(timeslice);
+        }
+        stopRecording() {
+          this.recorder.stop();
+        }
+      }
+
+      const mic = new Mic();
+      const voiceRecorder = new VoiceRecorder();
+      const startButton = document.getElementById("start-btn");
+      const stopButton = document.getElementById("stop-btn");
+
+      startButton.onclick = async function () {
+        await mic.connect();
+        voiceRecorder.connectMic(mic.stream);
+        voiceRecorder.startRecording();
+
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      };
+
+      stopButton.onclick = function () {
+        voiceRecorder.stopRecording();
+        mic.disconnect();
+
+        startButton.disabled = false;
+        stopButton.disabled = true;
+      };
+    </script>
+  </body>
+</html>
